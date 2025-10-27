@@ -26,9 +26,9 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 console.log('9. Express راه‌اندازی شد');
 
-const certDir = path.join(__dirname, 'certificates');
+const certDir = '/tmp/certificates';
 if (!fs.existsSync(certDir)) {
-  fs.mkdirSync('/tmp/certificates', { recursive: true });
+  fs.mkdirSync(certDir, { recursive: true });
   console.log('10. پوشه certificates ساخته شد');
 }
 
