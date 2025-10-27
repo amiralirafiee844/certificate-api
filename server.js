@@ -178,11 +178,7 @@ app.get('/certificates/:filename', (req, res) => {
   }
 });
 const PORT = process.env.PORT || 3000;
-console.log(`15. در حال راه‌اندازی سرور روی پورت ${PORT}...`);
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`API در پورت ${PORT} فعال است`);
-  console.log(`آدرس لوکال: http://127.0.0.1:${PORT}`);
-  console.log(`آدرس شبکه: http://192.168.200.9:${PORT}`);
-  console.log(`تأیید: ${process.env.VERIFY_URL}`);
+  console.log(`API running on port ${PORT}`);
 });
