@@ -167,8 +167,16 @@ app.post('/verify', (req, res) => {
   }
 });
 
-app.use('/certificates', express.static(certDir));
-
+// سرو فایل‌های PDF و QR
+app.get('/certificates/:filename', (req, res) => {
+  const filePath = path.join('/tmp/certificates', req.params.filename);
+  
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ error: 'File not found' });
+  }
+});
 const PORT = process.env.PORT || 3000;
 console.log(`15. در حال راه‌اندازی سرور روی پورت ${PORT}...`);
 
