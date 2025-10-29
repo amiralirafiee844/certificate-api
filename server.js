@@ -49,8 +49,8 @@ console.log('12. ایمیل تنظیم شد');
 console.log('13. در حال لود کلیدها...');
 let privateKey, publicKey;
 try {
-  privateKey = fs.readFileSync(path.join(__dirname, 'private.pem'), 'utf8');
-  publicKey = fs.readFileSync(path.join(__dirname, 'public.pem'), 'utf8');
+  privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, '\n');
+  publicKey = process.env.PUBLIC_KEY.replace(/\\n/g, '\n');
   console.log('14. کلیدها با موفقیت لود شدند');
 } catch (err) {
   console.error('خطا در لود کلیدها:', err.message);
