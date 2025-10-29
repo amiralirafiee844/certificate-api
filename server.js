@@ -22,20 +22,34 @@ console.log('7. crypto لود شد');
 const nodemailer = require('nodemailer');
 console.log('8. nodemailer لود شد');
 
-// ایجاد برنامه Express
+// --- تنظیمات Railway ---
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 console.log('9. Express راه‌اندازی شد');
 
-// مسیر ذخیره گواهی‌ها
-const certDir = path.join(__dirname, 'certificates');
+// پوشه موقت برای PDF (در Railway فقط /tmp قابل نوشتن است)
+const certDir = '/tmp/certificates';
 if (!fs.existsSync(certDir)) {
   fs.mkdirSync(certDir, { recursive: true });
-  console.log('10. پوشه certificates ساخته شد');
+  console.log('10. پوشه /tmp/certificates ساخته شد');
 }
 
-// تنظیمات ایمیل
-console.log('11. در حال تنظیم ایمیل...');
+// --- کلیدها از Environment Variables ---
+console.log('11. در حال لود کلیدها از متغیرهای محیطی...');
+let privateKey, publicKey;
+
+try {
+  privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, '\n');
+  publicKey = process.env.PUBLIC_KEY.replace(/\\n/g, '\n');
+  if (!privateKey || !publicKey) throw new Error('کلیدها خالی هستند');
+  console.log('12. کلیدها با موفقیت لود شدند');
+} catch (err) {
+  console.error('❌ خطا در لود کلیدها:', err.message);
+  process.exit(1);
+}
+
+// --- تنظیم ایمیل ---
+console.log('13. در حال تنظیم ایمیل...');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -43,59 +57,51 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS
   }
 });
-console.log('12. ایمیل تنظیم شد');
+console.log('14. ایمیل تنظیم شد');
 
-// کلیدهای RSA
-console.log('13. در حال لود کلیدها...');
-let privateKey, publicKey;
-try {
-  privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, '\n');
-  publicKey = process.env.PUBLIC_KEY.replace(/\\n/g, '\n');
-  console.log('14. کلیدها با موفقیت لود شدند');
-} catch (err) {
-  console.error('خطا در لود کلیدها:', err.message);
-  process.exit(1);
-}
+// --- Route اصلی برای تست ---
+app.get('/', (req, res) => {
+  res.json({
+    message: 'API گواهی دیجیتال من‌لاگ فعال است!',
+    endpoints: {
+      issue: 'POST /api/issue',
+      verify: 'POST /api/verify',
+      pdf: 'GET /certificates/:id.pdf'
+    },
+    domain: 'https://certificate-api-production.up.railway.app'
+  });
+});
 
-// مسیر صدور گواهی
+// --- صدور گواهی ---
 app.post('/api/issue', async (req, res) => {
-  console.log('درخواست صدور گواهی دریافت شد');
+  console.log('📥 درخواست صدور گواهی دریافت شد');
   try {
     const data = req.body;
     if (!data.name || !data.email || !data.course) {
       return res.status(400).json({ error: 'نام، ایمیل و دوره الزامی است' });
     }
 
-    const certId = crypto.randomUUID();
-    const issuedAt = new Date().toLocaleDateString('fa-IR');
+    const certId = crypto.randomUUID().split('-')[0];
+    const issuedAt = new Date().toISOString();
 
-    const certificate = {
-      id: certId,
-      data,
-      issuedAt: new Date().toISOString(),
-    };
-
+    const certificate = { id: certId, data, issuedAt };
     const sign = crypto.createSign('SHA256');
     sign.update(JSON.stringify(certificate));
     certificate.signature = sign.sign(privateKey, 'base64');
 
     const verifyUrl = `${process.env.VERIFY_URL}?cert=${encodeURIComponent(JSON.stringify(certificate))}`;
-
-    // ساخت PDF
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const pdfPath = path.join(certDir, `${certId}.pdf`);
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const pdfStream = fs.createWriteStream(pdfPath);
     doc.pipe(pdfStream);
 
-    // پس‌زمینه و فونت
-    doc.rect(0, 0, doc.page.width, doc.page.height).fill('#f8f9fa');
+    // فونت فارسی (اگر نبود از Helvetica)
     const fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-    if (!fs.existsSync(fontPath)) {
-      console.error('فونت DejaVuSans پیدا نشد. استفاده از فونت پیش‌فرض...');
-      doc.font('Helvetica');
-    } else {
+    if (fs.existsSync(fontPath)) {
       doc.font(fontPath);
-      console.log('فونت DejaVuSans با موفقیت لود شد');
+    } else {
+      doc.font('Helvetica');
     }
 
     doc.fontSize(32).fillColor('#1a5fb4').text('گواهی پایان دوره', { align: 'center' }).moveDown(2);
@@ -104,13 +110,13 @@ app.post('/api/issue', async (req, res) => {
     doc.moveDown(0.5);
     doc.text(`برای شرکت در دوره ${data.course}`, { align: 'center' });
     doc.moveDown(0.5);
-    doc.text(`تاریخ صدور: ${issuedAt}`, { align: 'center' });
+    doc.text(`تاریخ صدور: ${new Date(issuedAt).toLocaleDateString('fa-IR')}`, { align: 'center' });
 
+    // QR کد
     try {
       const qrImage = await QRCode.toDataURL(verifyUrl);
       doc.image(qrImage, doc.page.width - 150, doc.page.height - 150, { width: 100 });
     } catch (err) {
-      console.error('خطا در QR:', err);
       doc.text('QR کد قابل تولید نیست', { align: 'center' });
     }
 
@@ -131,11 +137,11 @@ app.post('/api/issue', async (req, res) => {
 
       try {
         await transporter.sendMail(mailOptions);
-        console.log('ایمیل با موفقیت ارسال شد');
+        console.log('📤 ایمیل ارسال شد');
         res.json({
           success: true,
           certificate,
-          pdfUrl: `/certificates/${certId}.pdf`,
+          pdfUrl: `https://certificate-api-production.up.railway.app/certificates/${certId}.pdf`,
           verifyUrl
         });
       } catch (err) {
@@ -143,15 +149,21 @@ app.post('/api/issue', async (req, res) => {
         res.status(500).json({ error: 'خطا در ارسال ایمیل' });
       }
     });
+
+    pdfStream.on('error', (err) => {
+      console.error('خطا در نوشتن PDF:', err.message);
+      res.status(500).json({ error: 'خطا در ساخت PDF' });
+    });
+
   } catch (err) {
     console.error('خطا در صدور گواهی:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// مسیر تأیید گواهی
+// --- تأیید گواهی ---
 app.post('/api/verify', (req, res) => {
-  console.log('درخواست تأیید گواهی');
+  console.log('🔍 درخواست تأیید گواهی دریافت شد');
   try {
     const { signature, ...data } = req.body;
     const verify = crypto.createVerify('SHA256');
@@ -159,17 +171,24 @@ app.post('/api/verify', (req, res) => {
     const isValid = verify.verify(publicKey, signature, 'base64');
     res.json({ valid: isValid });
   } catch (err) {
-    console.error('خطا در تأیید:', err.message);
+    console.error('❌ خطا در تأیید گواهی:', err.message);
     res.status(500).json({ error: 'خطا در تأیید' });
   }
 });
 
-// سرو فایل‌های PDF
-app.use('/certificates', express.static(certDir));
+// --- سرو فایل‌های PDF ---
+app.get('/certificates/:filename', (req, res) => {
+  const filePath = path.join(certDir, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ error: 'گواهی پیدا نشد' });
+  }
+});
 
-// راه‌اندازی سرور
+// --- پورت Railway ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ API در پورت ${PORT} فعال است`);
-  console.log(`🌐 آدرس Railway: ${process.env.VERIFY_URL || 'تنظیم نشده'}`);
+  console.log(`✅ API روی پورت ${PORT} فعال شد`);
+  console.log(`🌐 آدرس: https://certificate-api-production.up.railway.app`);
 });
